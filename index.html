@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ward Directory Flashcards</title>
+  <!-- Include PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <!-- Include jszip for packaging TSV and images -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- Include FileSaver.js for downloads -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <!-- Include jsPDF for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .hidden { display: none; }
+    #canvas-container { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Ward Directory Flashcards</h1>
+  <input type="file" id="pdfInput" accept="application/pdf" />
+  <div>
+    <label><input type="radio" name="mode" value="tsv" checked> Download TSV & Images</label>
+    <label><input type="radio" name="mode" value="pdf"> Generate Flashcards PDF</label>
+  </div>
+  <button id="processBtn" disabled>Process</button>
+
+  <div id="canvas-container">
+    <canvas id="pageCanvas"></canvas>
+  </div>
+
+  <script>
+  // Regex patterns
+  const NAME_RE = /^([A-Za-z][A-Za-z'\- ]+,\s+[A-Za-z][A-Za-z'\- ]+)$/;
+  const PREFNAME_RE = /^(?:Preferred:\s*)?([A-Za-z][A-Za-z'\- ]+)$/;
+
+  let pdfDoc = null;
+  document.getElementById('pdfInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const arrayBuffer = await file.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+    document.getElementById('processBtn').disabled = false;
+  });
+
+  document.getElementById('processBtn').addEventListener('click', async () => {
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    const rows = [];
+    const images = [];
+    
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const vt = await page.getTextContent();
+      const items = vt.items;
+      const viewport = page.getViewport({ scale: 1.0 });
+      const nameEntries = [];
+
+      // Extract text lines with positions
+      for (const item of items) {
+        const text = item.str.trim();
+        if(!text || text.includes('Ward Directory') || (text.length===1 && /[A-Z]/.test(text))) continue;
+        let mFull = text.match(NAME_RE);
+        let mPref = text.match(PREFNAME_RE);
+        if (mFull) {
+          rows.push({ full: mFull[1], pref: null, y: item.transform[5], page: p, img: null });
+          nameEntries.push(rows.length-1);
+        } else if (mPref && nameEntries.length) {
+          const idx = nameEntries[nameEntries.length-1];
+          rows[idx].pref = mPref[1];
+        }
+      }
+
+      // Extract images
+      const opList = await page.getOperatorList();
+      const fnArray = opList.fnArray;
+      const argsArray = opList.argsArray;
+      let imgCount = 0;
+
+      for (let i = 0; i < fnArray.length; i++) {
+        if (fnArray[i] === pdfjsLib.OPS.paintImageXObject || fnArray[i] === pdfjsLib.OPS.paintJpegXObject) {
+          const imgName = argsArray[i][0];
+          const img = await page.objs.get(imgName);
+          // convert to canvas
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+          const dataUrl = canvas.toDataURL('image/png');
+          // y-pos approximate: reuse arbitrary matching by sequence
+          const rowIdx = rows.findIndex(r => r.page===p && r.img===null);
+          if (rowIdx>=0) rows[rowIdx].img = dataUrl;
+        }
+      }
+    }
+
+    if (mode === 'tsv') {
+      // Build TSV
+      let tsv = 'Front\tBack\n';
+      rows.forEach(r => {
+        const front = r.pref || r.full;
+        const imgTag = r.img ? `<img src=\"${r.img}\">` : '';
+        const back = `${imgTag}${r.full}`;
+        tsv += `${front}\t${back}\n`;
+      });
+      // Package TSV and images
+      const zip = new JSZip();
+      zip.file('flashcards.tsv', tsv);
+      rows.forEach((r,i) => {
+        if (r.img) zip.file(`images/${i}.png`, r.img.split(',')[1], {base64: true});
+      });
+      zip.generateAsync({type:'blob'}).then(content => {
+        saveAs(content, 'flashcards_package.zip');
+      });
+    } else {
+      // PDF generation
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape' });
+      rows.forEach((r, idx) => {
+        if (idx>0) doc.addPage();
+        doc.setFontSize(24);
+        doc.setFont(undefined, 'bold');
+        doc.text(r.pref||r.full, 20, 40);
+        if (r.img) doc.addImage(r.img, 'PNG', 120, 20, 60, 60);
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'normal');
+        doc.text(r.full, 120, 90);
+      });
+      doc.save('flashcards_two_sided.pdf');
+    }
+  });
+  </script>
+</body>
+</html>
