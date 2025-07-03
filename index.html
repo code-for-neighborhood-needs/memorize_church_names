@@ -1,17 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Ward Directory Flashcards</title>
-  <!-- Include PDF.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
-  <!-- Include jszip for packaging TSV and images -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <!-- Include FileSaver.js for downloads -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-  <!-- Include jsPDF for PDF generation -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Load PDF.js from local -->
+  <script src="libs/pdf.min.js"></script>
+  <script>
+    // point PDF.js at its worker file
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+  </script>
+
+  <!-- Load JSZip -->
+  <script src="libs/jszip.min.js"></script>
+
+  <!-- Load FileSaver.js -->
+  <script src="libs/FileSaver.min.js"></script>
+
+  <!-- Load jsPDF -->
+  <script src="libs/jspdf.umd.min.js"></script>
+
   <style>
     body { font-family: Arial, sans-serif; margin: 2rem; }
     .hidden { display: none; }
